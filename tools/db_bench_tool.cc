@@ -57,6 +57,7 @@
 #include "rocksdb/utilities/transaction.h"
 #include "rocksdb/utilities/transaction_db.h"
 #include "rocksdb/write_batch.h"
+#include "util/bit_corruption_injection_test_env.h"
 #include "util/cast_util.h"
 #include "util/compression.h"
 #include "util/crc32c.h"
@@ -446,6 +447,10 @@ DEFINE_bool(enable_index_compression,
             rocksdb::BlockBasedTableOptions().enable_index_compression,
             "Compress the index block");
 
+DEFINE_bool(double_metadata,
+            rocksdb::BlockBasedTableOptions().double_metadata,
+            "Write metadatat blocks twice");
+
 DEFINE_int64(compressed_cache_size, -1,
              "Number of bytes to use as a cache of compressed data.");
 
@@ -789,6 +794,8 @@ DEFINE_int32(table_cache_numshardbits, 4, "");
 DEFINE_string(env_uri, "", "URI for registry Env lookup. Mutually exclusive"
               " with --hdfs.");
 #endif  // ROCKSDB_LITE
+
+DEFINE_int64(uber, -1, "UBER to use with BitCorruptionInjectionTestEnv");
 DEFINE_string(hdfs, "", "Name of hdfs environment. Mutually exclusive with"
               " --env_uri.");
 static rocksdb::Env* FLAGS_env = rocksdb::Env::Default();
@@ -844,6 +851,13 @@ DEFINE_bool(enable_pipelined_write, true,
 
 DEFINE_bool(allow_concurrent_memtable_write, true,
             "Allow multi-writers to update mem tables in parallel.");
+
+DEFINE_bool(inplace_update_support, rocksdb::Options().inplace_update_support,
+            "Support in-place memtable update for smaller or same-size values");
+
+DEFINE_uint64(inplace_update_num_locks,
+              rocksdb::Options().inplace_update_num_locks,
+              "Number of RW locks to protect in-place memtable updates");
 
 DEFINE_bool(enable_write_thread_adaptive_yield, true,
             "Use a yielding spin loop for brief writer thread waits.");
@@ -3062,6 +3076,12 @@ void VerifyDBFromDB(std::string& truth_db_name) {
         fprintf(stderr, "Invalid cuckoo_hash_ratio\n");
         exit(1);
       }
+
+      if (!FLAGS_mmap_read) {
+        fprintf(stderr, "cuckoo table format requires mmap read to operate\n");
+        exit(1);
+      }
+
       rocksdb::CuckooTableOptions table_options;
       table_options.hash_table_ratio = FLAGS_cuckoo_hash_ratio;
       table_options.identity_as_first_hash = FLAGS_identity_as_first_hash;
@@ -3198,6 +3218,8 @@ void VerifyDBFromDB(std::string& truth_db_name) {
     options.delayed_write_rate = FLAGS_delayed_write_rate;
     options.allow_concurrent_memtable_write =
         FLAGS_allow_concurrent_memtable_write;
+    options.inplace_update_support = FLAGS_inplace_update_support;
+    options.inplace_update_num_locks = FLAGS_inplace_update_num_locks;
     options.enable_write_thread_adaptive_yield =
         FLAGS_enable_write_thread_adaptive_yield;
     options.enable_pipelined_write = FLAGS_enable_pipelined_write;
@@ -3495,7 +3517,7 @@ void VerifyDBFromDB(std::string& truth_db_name) {
         case RANDOM:
           return rand_->Next() % num_;
         case UNIQUE_RANDOM:
-          assert(next_ + 1 < num_);
+          assert(next_ < num_);
           return values_[next_++];
       }
       assert(false);
@@ -5334,6 +5356,10 @@ int db_bench_tool(int argc, char** argv) {
     }
   }
 #endif  // ROCKSDB_LITE
+  if (!(FLAGS_uber < 0)) {
+    FLAGS_env = new BitCorruptionInjectionTestEnv(
+      rocksdb::Env::Default(), FLAGS_uber);
+  }
   if (!FLAGS_hdfs.empty()) {
     FLAGS_env  = new rocksdb::HdfsEnv(FLAGS_hdfs);
   }

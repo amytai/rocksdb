@@ -247,8 +247,9 @@ class DBImpl : public DB {
       const TransactionLogIterator::ReadOptions&
           read_options = TransactionLogIterator::ReadOptions()) override;
   virtual Status DeleteFile(std::string name) override;
-  Status DeleteFilesInRange(ColumnFamilyHandle* column_family,
-                            const Slice* begin, const Slice* end);
+  Status DeleteFilesInRanges(ColumnFamilyHandle* column_family,
+                             const RangePtr* ranges, size_t n,
+                             bool include_end = true);
 
   virtual void GetLiveFilesMetaData(
       std::vector<LiveFileMetaData>* metadata) override;
@@ -468,6 +469,8 @@ class DBImpl : public DB {
   // belong to live files are posibly removed. Also, removes all the
   // files in sst_delete_files and log_delete_files.
   // It is not necessary to hold the mutex when invoking this method.
+  // If FindObsoleteFiles() was run, we need to also run
+  // PurgeObsoleteFiles(), even if disable_delete_obsolete_files_ is true
   void PurgeObsoleteFiles(const JobContext& background_contet,
                           bool schedule_only = false);
 
@@ -611,10 +614,14 @@ class DBImpl : public DB {
                      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
                      const bool seq_per_batch);
 
+  virtual Status Close() override;
+
  protected:
   Env* const env_;
   const std::string dbname_;
   unique_ptr<VersionSet> versions_;
+  // Flag to check whether we allocated and own the info log file
+  bool own_info_log_;
   const DBOptions initial_db_options_;
   const ImmutableDBOptions immutable_db_options_;
   MutableDBOptions mutable_db_options_;
@@ -807,8 +814,12 @@ class DBImpl : public DB {
   Status FlushMemTable(ColumnFamilyData* cfd, const FlushOptions& options,
                        bool writes_stopped = false);
 
-  // Wait for memtable flushed
-  Status WaitForFlushMemTable(ColumnFamilyData* cfd);
+  // Wait for memtable flushed.
+  // If flush_memtable_id is non-null, wait until the memtable with the ID
+  // gets flush. Otherwise, wait until the column family don't have any
+  // memtable pending flush.
+  Status WaitForFlushMemTable(ColumnFamilyData* cfd,
+                              const uint64_t* flush_memtable_id = nullptr);
 
   // REQUIRES: mutex locked
   Status SwitchWAL(WriteContext* write_context);
@@ -912,6 +923,9 @@ class DBImpl : public DB {
 
   uint64_t GetMaxTotalWalSize() const;
 
+  // Actual implementation of Close()
+  virtual Status CloseImpl();
+
   // table_cache_ provides its own synchronization
   std::shared_ptr<Cache> table_cache_;
 
@@ -940,6 +954,8 @@ class DBImpl : public DB {
   // (i.e. whenever a flush is done, even if it didn't make any progress)
   // * whenever there is an error in background purge, flush or compaction
   // * whenever num_running_ingest_file_ goes to 0.
+  // * whenever pending_purge_obsolete_files_ goes to 0.
+  // * whenever disable_delete_obsolete_files_ goes to 0.
   InstrumentedCondVar bg_cv_;
   // Writes are protected by locking both mutex_ and log_write_mutex_, and reads
   // must be under either mutex_ or log_write_mutex_. Since after ::Open,
@@ -1206,6 +1222,10 @@ class DBImpl : public DB {
   // without any synchronization
   int disable_delete_obsolete_files_;
 
+  // Number of times FindObsoleteFiles has found deletable files and the
+  // corresponding call to PurgeObsoleteFiles has not yet finished.
+  int pending_purge_obsolete_files_;
+
   // last time when DeleteObsoleteFiles with full scan was executed. Originaly
   // initialized with startup time.
   uint64_t delete_obsolete_files_last_run_;
@@ -1359,6 +1379,9 @@ class DBImpl : public DB {
   // is set to false.
   std::atomic<SequenceNumber> preserve_deletes_seqnum_;
   const bool preserve_deletes_;
+
+  // Flag to check whether Close() has been called on this DB
+  bool closed_;
 };
 
 extern Options SanitizeOptions(const std::string& db,

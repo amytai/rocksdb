@@ -15,10 +15,12 @@
 //    kTypeValue varstring varstring
 //    kTypeDeletion varstring
 //    kTypeSingleDeletion varstring
+//    kTypeRangeDeletion varstring varstring
 //    kTypeMerge varstring varstring
 //    kTypeColumnFamilyValue varint32 varstring varstring
-//    kTypeColumnFamilyDeletion varint32 varstring varstring
-//    kTypeColumnFamilySingleDeletion varint32 varstring varstring
+//    kTypeColumnFamilyDeletion varint32 varstring
+//    kTypeColumnFamilySingleDeletion varint32 varstring
+//    kTypeColumnFamilyRangeDeletion varint32 varstring varstring
 //    kTypeColumnFamilyMerge varint32 varstring varstring
 //    kTypeBeginPrepareXID varstring
 //    kTypeEndPrepareXID
@@ -143,6 +145,12 @@ WriteBatch::WriteBatch(const std::string& rep)
       content_flags_(ContentFlags::DEFERRED),
       max_bytes_(0),
       rep_(rep) {}
+
+WriteBatch::WriteBatch(std::string&& rep)
+    : save_points_(nullptr),
+      content_flags_(ContentFlags::DEFERRED),
+      max_bytes_(0),
+      rep_(std::move(rep)) {}
 
 WriteBatch::WriteBatch(const WriteBatch& src)
     : save_points_(src.save_points_),

@@ -34,12 +34,15 @@
 
 cmake_minimum_required(VERSION 2.8.12)
 project(rocksdb)
+enable_language(CXX)
+enable_language(C)
+enable_language(ASM)
 
 if(POLICY CMP0042)
   cmake_policy(SET CMP0042 NEW)
 endif()
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules/")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules/")
 
 option(WITH_JEMALLOC "build with JeMalloc" OFF)
 option(WITH_SNAPPY "build with SNAPPY" OFF)
@@ -129,20 +132,19 @@ endif()
 
 string(REGEX REPLACE "[^0-9a-f]+" "" GIT_SHA "${GIT_SHA}")
 
-if(NOT WIN32)
-  execute_process(COMMAND
-      "./build_tools/version.sh" "full"
-      WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-      OUTPUT_VARIABLE ROCKSDB_VERSION
-  )
-  string(STRIP "${ROCKSDB_VERSION}" ROCKSDB_VERSION)
-  execute_process(COMMAND
-      "./build_tools/version.sh" "major"
-      WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-      OUTPUT_VARIABLE ROCKSDB_VERSION_MAJOR
-  )
-  string(STRIP "${ROCKSDB_VERSION_MAJOR}" ROCKSDB_VERSION_MAJOR)
-endif()
+set(SH_CMD "sh")
+execute_process(COMMAND
+  ${SH_CMD} -c "build_tools/version.sh full"
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  OUTPUT_VARIABLE ROCKSDB_VERSION
+)
+string(STRIP "${ROCKSDB_VERSION}" ROCKSDB_VERSION)
+execute_process(COMMAND
+  ${SH_CMD} -c "build_tools/version.sh major"
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  OUTPUT_VARIABLE ROCKSDB_VERSION_MAJOR
+)
+string(STRIP "${ROCKSDB_VERSION_MAJOR}" ROCKSDB_VERSION_MAJOR)
 
 option(WITH_MD_LIBRARY "build with MD" ON)
 if(WIN32 AND MSVC)
@@ -178,6 +180,18 @@ else()
   endif()
 endif()
 
+include(CheckCCompilerFlag)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "ppc64le")
+  CHECK_C_COMPILER_FLAG("-maltivec" HAS_ALTIVEC)
+  if(HAS_ALTIVEC)
+    message(STATUS " HAS_ALTIVEC yes")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -maltivec")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maltivec")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mcpu=power8")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mcpu=power8")
+  endif(HAS_ALTIVEC)
+endif(CMAKE_SYSTEM_PROCESSOR MATCHES "ppc64le")
+
 option(PORTABLE "build a portable binary" OFF)
 option(FORCE_SSE42 "force building with SSE4.2, even when PORTABLE=ON" OFF)
 if(PORTABLE)
@@ -190,7 +204,9 @@ else()
   if(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:AVX2")
   else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+    if(NOT HAVE_POWER8)
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+    endif()
   endif()
 endif()
 
@@ -626,6 +642,12 @@ set_source_files_properties(
   endif()
 endif()
 
+if(HAVE_POWER8)
+  list(APPEND SOURCES
+    util/crc32c_ppc.c
+    util/crc32c_ppc_asm.S)
+endif(HAVE_POWER8)
+
 if(WIN32)
   list(APPEND SOURCES
     port/win/io_win.cc
@@ -720,7 +742,7 @@ if(NOT WIN32 OR ROCKSDB_INSTALL_ON_WINDOWS)
   set(package_config_destination ${CMAKE_INSTALL_LIBDIR}/cmake/rocksdb)
 
   configure_package_config_file(
-    ${CMAKE_SOURCE_DIR}/cmake/RocksDBConfig.cmake.in RocksDBConfig.cmake
+    ${CMAKE_CURRENT_LIST_DIR}/cmake/RocksDBConfig.cmake.in RocksDBConfig.cmake
     INSTALL_DESTINATION ${package_config_destination}
   )
 
@@ -950,17 +972,18 @@ if(WITH_TESTS)
 
   foreach(sourcefile ${TEST_EXES})
       get_filename_component(exename ${sourcefile} NAME_WE)
-      add_executable(${exename}${ARTIFACT_SUFFIX} ${sourcefile}
+      add_executable(${CMAKE_PROJECT_NAME}_${exename}${ARTIFACT_SUFFIX} ${sourcefile}
         $<TARGET_OBJECTS:testharness>)
-      set_target_properties(${exename}${ARTIFACT_SUFFIX}
+      set_target_properties(${CMAKE_PROJECT_NAME}_${exename}${ARTIFACT_SUFFIX}
         PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD_RELEASE 1
         EXCLUDE_FROM_DEFAULT_BUILD_MINRELEASE 1
         EXCLUDE_FROM_DEFAULT_BUILD_RELWITHDEBINFO 1
+        OUTPUT_NAME ${exename}${ARTIFACT_SUFFIX}
         )
-      target_link_libraries(${exename}${ARTIFACT_SUFFIX} testutillib${ARTIFACT_SUFFIX} gtest ${LIBS})
+      target_link_libraries(${CMAKE_PROJECT_NAME}_${exename}${ARTIFACT_SUFFIX} testutillib${ARTIFACT_SUFFIX} gtest ${LIBS})
       if(NOT "${exename}" MATCHES "db_sanity_test")
         add_test(NAME ${exename} COMMAND ${exename}${ARTIFACT_SUFFIX})
-        add_dependencies(check ${exename}${ARTIFACT_SUFFIX})
+        add_dependencies(check ${CMAKE_PROJECT_NAME}_${exename}${ARTIFACT_SUFFIX})
       endif()
   endforeach(sourcefile ${TEST_EXES})
 

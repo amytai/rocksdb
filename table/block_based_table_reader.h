@@ -63,8 +63,11 @@ typedef std::vector<std::pair<std::string, std::string>> KVPairBlock;
 class BlockBasedTable : public TableReader {
  public:
   static const std::string kFilterBlockPrefix;
+  static const std::string kFilterBlockPrefix2;
   static const std::string kFullFilterBlockPrefix;
+  static const std::string kFullFilterBlockPrefix2;
   static const std::string kPartitionedFilterBlockPrefix;
+  static const std::string kPartitionedFilterBlockPrefix2;
   // The longest prefix of the cache key used to identify blocks.
   // For Posix files the unique ID is three varints.
   static const size_t kMaxCacheKeyPrefixSize = kMaxVarint64Length * 3 + 1;
@@ -214,12 +217,13 @@ class BlockBasedTable : public TableReader {
 
  private:
   friend class MockedBlockBasedTable;
+  static std::atomic<uint64_t> next_cache_key_id_;
   // input_iter: if it is not null, update this one and return it as Iterator
-  static InternalIterator* NewDataBlockIterator(
+  static BlockIter* NewDataBlockIterator(
       Rep* rep, const ReadOptions& ro, const Slice& index_value,
       BlockIter* input_iter = nullptr, bool is_index = false,
       GetContext* get_context = nullptr);
-  static InternalIterator* NewDataBlockIterator(
+  static BlockIter* NewDataBlockIterator(
       Rep* rep, const ReadOptions& ro, const BlockHandle& block_hanlde,
       BlockIter* input_iter = nullptr, bool is_index = false,
       GetContext* get_context = nullptr, Status s = Status());
@@ -376,6 +380,14 @@ class BlockBasedTable::BlockEntryIteratorState : public TwoLevelIteratorState {
   bool is_index_;
   std::unordered_map<uint64_t, CachableEntry<Block>>* block_map_;
   port::RWMutex cleaner_mu;
+
+  static const size_t kInitReadaheadSize = 8 * 1024;
+  // Found that 256 KB readahead size provides the best performance, based on
+  // experiments.
+  static const size_t kMaxReadaheadSize;
+  size_t readahead_size_ = kInitReadaheadSize;
+  size_t readahead_limit_ = 0;
+  int num_file_reads_ = 0;
 };
 
 // CachableEntry represents the entries that *may* be fetched from block cache.

@@ -441,7 +441,8 @@ Status DBImpl::CompactFiles(
   }  // release the mutex
 
   // delete unnecessary files if any, this is done outside the mutex
-  if (job_context.HaveSomethingToDelete() || !log_buffer.IsEmpty()) {
+  if (job_context.HaveSomethingToClean() ||
+      job_context.HaveSomethingToDelete() || !log_buffer.IsEmpty()) {
     // Have to flush the info logs before bg_compaction_scheduled_--
     // because if bg_flush_scheduled_ becomes 0 and the lock is
     // released, the deconstructor of DB can kick in and destroy all the
@@ -809,7 +810,13 @@ int DBImpl::Level0StopWriteTrigger(ColumnFamilyHandle* column_family) {
 Status DBImpl::Flush(const FlushOptions& flush_options,
                      ColumnFamilyHandle* column_family) {
   auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
-  return FlushMemTable(cfh->cfd(), flush_options);
+  ROCKS_LOG_INFO(immutable_db_options_.info_log, "[%s] Manual flush start.",
+                 cfh->GetName().c_str());
+  Status s = FlushMemTable(cfh->cfd(), flush_options);
+  ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                 "[%s] Manual flush finished, status: %s\n",
+                 cfh->GetName().c_str(), s.ToString().c_str());
+  return s;
 }
 
 Status DBImpl::RunManualCompaction(ColumnFamilyData* cfd, int input_level,
@@ -944,6 +951,7 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
                              const FlushOptions& flush_options,
                              bool writes_stopped) {
   Status s;
+  uint64_t flush_memtable_id = 0;
   {
     WriteContext context;
     InstrumentedMutexLock guard_lock(&mutex_);
@@ -961,6 +969,7 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
 
     // SwitchMemtable() will release and reacquire mutex during execution
     s = SwitchMemtable(cfd, &context);
+    flush_memtable_id = cfd->imm()->GetLatestMemTableID();
 
     if (!writes_stopped) {
       write_thread_.ExitUnbatched(&w);
@@ -975,16 +984,19 @@ Status DBImpl::FlushMemTable(ColumnFamilyData* cfd,
 
   if (s.ok() && flush_options.wait) {
     // Wait until the compaction completes
-    s = WaitForFlushMemTable(cfd);
+    s = WaitForFlushMemTable(cfd, &flush_memtable_id);
   }
   return s;
 }
 
-Status DBImpl::WaitForFlushMemTable(ColumnFamilyData* cfd) {
+Status DBImpl::WaitForFlushMemTable(ColumnFamilyData* cfd,
+                                    const uint64_t* flush_memtable_id) {
   Status s;
   // Wait until the compaction completes
   InstrumentedMutexLock l(&mutex_);
-  while (cfd->imm()->NumNotFlushed() > 0 && bg_error_.ok()) {
+  while (cfd->imm()->NumNotFlushed() > 0 && bg_error_.ok() &&
+         (flush_memtable_id == nullptr ||
+          cfd->imm()->GetEarliestMemTableID() <= *flush_memtable_id)) {
     if (shutting_down_.load(std::memory_order_acquire)) {
       return Status::ShutdownInProgress();
     }
@@ -1059,6 +1071,7 @@ void DBImpl::MaybeScheduleFlushOrCompaction() {
   if (HasExclusiveManualCompaction()) {
     // only manual compactions are allowed to run. don't schedule automatic
     // compactions
+    TEST_SYNC_POINT("DBImpl::MaybeScheduleFlushOrCompaction:Conflict");
     return;
   }
 
@@ -1303,8 +1316,10 @@ void DBImpl::BackgroundCallFlush() {
     // created. Thus, we force full scan in FindObsoleteFiles()
     FindObsoleteFiles(&job_context, !s.ok() && !s.IsShutdownInProgress());
     // delete unnecessary files if any, this is done outside the mutex
-    if (job_context.HaveSomethingToDelete() || !log_buffer.IsEmpty()) {
+    if (job_context.HaveSomethingToClean() ||
+        job_context.HaveSomethingToDelete() || !log_buffer.IsEmpty()) {
       mutex_.Unlock();
+      TEST_SYNC_POINT("DBImpl::BackgroundCallFlush:FilesFound");
       // Have to flush the info logs before bg_flush_scheduled_--
       // because if bg_flush_scheduled_ becomes 0 and the lock is
       // released, the deconstructor of DB can kick in and destroy all the
@@ -1384,7 +1399,8 @@ void DBImpl::BackgroundCallCompaction(PrepickedCompaction* prepicked_compaction,
     FindObsoleteFiles(&job_context, !s.ok() && !s.IsShutdownInProgress());
 
     // delete unnecessary files if any, this is done outside the mutex
-    if (job_context.HaveSomethingToDelete() || !log_buffer.IsEmpty()) {
+    if (job_context.HaveSomethingToClean() ||
+        job_context.HaveSomethingToDelete() || !log_buffer.IsEmpty()) {
       mutex_.Unlock();
       // Have to flush the info logs before bg_compaction_scheduled_--
       // because if bg_flush_scheduled_ becomes 0 and the lock is
@@ -1503,7 +1519,7 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
                : m->manual_end->DebugString().c_str()));
     }
   } else if (!is_prepicked && !compaction_queue_.empty()) {
-    if (HaveManualCompaction(compaction_queue_.front())) {
+    if (HasExclusiveManualCompaction()) {
       // Can't compact right now, but try again later
       TEST_SYNC_POINT("DBImpl::BackgroundCompaction()::Conflict");
 
