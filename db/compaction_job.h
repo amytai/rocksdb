@@ -87,6 +87,8 @@ class CompactionJob {
   // REQUIRED: mutex held
   Status Install(const MutableCFOptions& mutable_cf_options);
 
+  Status *GetStatusPointer(); // LOL this is a terrible function to have.. o well
+
  private:
   struct SubcompactionState;
 

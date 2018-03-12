@@ -41,7 +41,8 @@ void EventHelpers::NotifyOnBackgroundError(
     const std::vector<std::shared_ptr<EventListener>>& listeners,
     BackgroundErrorReason reason, Status* bg_error,
     InstrumentedMutex* db_mutex,
-    BackgroundErrorInfo *info) {
+    BackgroundErrorInfo *info,
+    Status *compact_status) {
 #ifndef ROCKSDB_LITE
   if (listeners.size() == 0U) {
     return;
@@ -52,7 +53,7 @@ void EventHelpers::NotifyOnBackgroundError(
   for (auto& listener : listeners) {
     listener->OnBackgroundError(reason, bg_error);
     if (info != nullptr) {
-      listener->OnSpecialBackgroundError(reason, bg_error, info);
+      listener->OnSpecialBackgroundError(reason, bg_error, info, compact_status);
     }
   }
   db_mutex->Lock();

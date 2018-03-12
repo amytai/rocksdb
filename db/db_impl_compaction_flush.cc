@@ -1716,14 +1716,33 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
     compaction_job.Prepare();
 
     mutex_.Unlock();
-    compaction_job.Run();
+    status = compaction_job.Run();
     TEST_SYNC_POINT("DBImpl::BackgroundCompaction:NonTrivial:AfterRun");
     mutex_.Lock();
+
+    // Now check to see if there are any corruptions we need to deal
+    // with synchronously
+    if (status.IsCorruption()) {
+      ROCKS_LOG_WARN(immutable_db_options_.info_log, "Compaction error: %s",
+          status.ToString().c_str());
+      if (immutable_db_options_.paranoid_checks && bg_error_.ok()) {
+        Status new_bg_error = status;
+        // may temporarily unlock and lock the mutex.
+        if (!c->BeginKeys().empty()) {
+          BackgroundErrorInfo beInfo;
+          beInfo.beginKeys = c->BeginKeys();
+          beInfo.endKeys = c->EndKeys();
+          EventHelpers::NotifyOnBackgroundError(immutable_db_options_.listeners,
+              BackgroundErrorReason::kCompaction,
+              &new_bg_error, &mutex_, &beInfo, compaction_job.GetStatusPointer());
+        }
+      }
+    }
 
     status = compaction_job.Install(*c->mutable_cf_options());
     if (status.ok()) {
       InstallSuperVersionAndScheduleWork(
-          c->column_family_data(), &job_context->superversion_context,
+            c->column_family_data(), &job_context->superversion_context,
           *c->mutable_cf_options());
     }
     *made_progress = true;
@@ -1746,12 +1765,9 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
     if (immutable_db_options_.paranoid_checks && bg_error_.ok()) {
       Status new_bg_error = status;
       // may temporarily unlock and lock the mutex.
-      BackgroundErrorInfo beInfo;
-      beInfo.beginKeys = c->BeginKeys();
-      beInfo.endKeys = c->EndKeys();
       EventHelpers::NotifyOnBackgroundError(immutable_db_options_.listeners,
                                             BackgroundErrorReason::kCompaction,
-                                            &new_bg_error, &mutex_, &beInfo);
+                                            &new_bg_error, &mutex_);
       if (!new_bg_error.ok()) {
         bg_error_ = new_bg_error;
       }

@@ -564,9 +564,28 @@ Status CompactionJob::Run() {
   // Check if any thread encountered an error during execution
   Status status;
   for (const auto& state : compact_->sub_compact_states) {
-    if (!state.status.ok()) {
+    if (!state.status.ok() && status.ok()) {
       status = state.status;
-      break;
+    }
+    // If status is corrupted, make sure we preserve the corrupted range
+    // in the overarching Compaction object
+    if (state.status.IsCorruption()) {
+      int i = 0;
+      for (Slice s : state.beginKeys) {
+        // Ugh, this is necessary because compact_ gets deleted, which
+        // causes these slices to be deleted, so we have to copy the slices over
+        char *herp = new char[s.size()]{};
+        memcpy(herp, s.data(), s.size());
+        Slice temp = Slice(herp, s.size());
+        compact_->compaction->AddBeginKey(temp);
+
+        Slice end = state.endKeys[i];
+        char *hello = new char[end.size()]{};
+        memcpy(hello, end.data(), end.size());
+        Slice temp2 = Slice(hello, end.size());
+        compact_->compaction->AddEndKey(temp2);
+        i++;
+      }
     }
   }
 
@@ -591,6 +610,10 @@ Status CompactionJob::Run() {
   return status;
 }
 
+Status *CompactionJob::GetStatusPointer() {
+  return &compact_->status;
+}
+
 Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_INSTALL);
@@ -602,6 +625,8 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
 
   if (status.ok()) {
     status = InstallCompactionResults(mutable_cf_options);
+    TEST_SYNC_POINT_CALLBACK("CompactionJob::Install:PostInstallResults",
+        &status);
   }
   VersionStorageInfo::LevelSummaryStorage tmp;
   auto vstorage = cfd->current()->storage_info();
@@ -1418,28 +1443,6 @@ Status CompactionJob::OpenCompactionOutputFile(
 void CompactionJob::CleanupCompaction() {
   for (SubcompactionState& sub_compact : compact_->sub_compact_states) {
     const auto& sub_status = sub_compact.status;
-
-    // If status is corrupted, make sure we preserve the corrupted range
-    // in the overarching Compaction object
-    if (sub_status.IsCorruption()) {
-      int i = 0;
-      for (Slice s : sub_compact.beginKeys) {
-        // Ugh, this is necessary because compact_ gets deleted, which
-        // causes these slices to be deleted, so we have to copy the slices over
-        char *herp = new char[s.size()]{};
-        memcpy(herp, s.data(), s.size());
-        Slice temp = Slice(herp, s.size());
-        compact_->compaction->AddBeginKey(temp);
-
-        Slice end = sub_compact.endKeys[i];
-        char *hello = new char[end.size()]{};
-        memcpy(hello, end.data(), end.size());
-        Slice temp2 = Slice(hello, end.size());
-        compact_->compaction->AddEndKey(temp2);
-        i++;
-      }
-    }
-
     if (sub_compact.builder != nullptr) {
       // May happen if we get a shutdown call in the middle of compaction
       sub_compact.builder->Abandon();

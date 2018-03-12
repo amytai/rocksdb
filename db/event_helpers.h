@@ -29,7 +29,8 @@ class EventHelpers {
       const std::vector<std::shared_ptr<EventListener>>& listeners,
       BackgroundErrorReason reason, Status* bg_error,
       InstrumentedMutex* db_mutex,
-      BackgroundErrorInfo *info=nullptr);
+      BackgroundErrorInfo *info=nullptr,
+      Status *compact_status=nullptr);
   static void LogAndNotifyTableFileCreationFinished(
       EventLogger* event_logger,
       const std::vector<std::shared_ptr<EventListener>>& listeners,

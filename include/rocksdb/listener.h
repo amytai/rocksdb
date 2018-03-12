@@ -400,7 +400,8 @@ class EventListener {
 
   virtual void OnSpecialBackgroundError(BackgroundErrorReason /* reason */,
                                  Status* /* bg_error */,
-                                 BackgroundErrorInfo* /*key-ranges to recover*/) {}
+                                 BackgroundErrorInfo* /*key-ranges to recover*/,
+                                 Status * /*to update compaction status to OK*/) {}
 
   // A call-back function for RocksDB which will be called whenever a change
   // of superversion triggers a change of the stall conditions.

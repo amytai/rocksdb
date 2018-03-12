@@ -27,7 +27,7 @@ class BackgroundErrorListener : public EventListener {
        ~BackgroundErrorListener() override{};
 
        void OnSpecialBackgroundError(BackgroundErrorReason reason, Status* bg_error,
-           BackgroundErrorInfo *info) override {
+           BackgroundErrorInfo *info, Status *status) override {
          assert(info->beginKeys.size() >= 1);
          assert(info->endKeys.size() >= 1);
          assert(info->beginKeys.size() == info->endKeys.size());
@@ -39,6 +39,9 @@ class BackgroundErrorListener : public EventListener {
          }
          assert(info->beginKeys[0] == DBTestBase::Key(0) || info->beginKeys[0] == DBTestBase::Key(5));
          assert(info->endKeys[0] == Slice("l", 1) || info->endKeys[0] == DBTestBase::Key(5));
+         if (status != nullptr) {
+          *status = Status::OK();
+         }
        }
 };
 
@@ -62,6 +65,7 @@ TEST_F(CompactionCorruptionTest, CancellingCompactionsWorks) {
 
   int num_corruptions=0;
   int injected_corruptions = 0;
+  int encountered_install = 0;
   rocksdb::SyncPoint::GetInstance()->SetCallBack(
       "CompactionJob::run()::EncounteredCorruption",
       [&](void* arg) { num_corruptions++;});
@@ -72,6 +76,12 @@ TEST_F(CompactionCorruptionTest, CancellingCompactionsWorks) {
       "CorruptedRandomAccessFile::Read():CheckIfCompactionTest",
       [&](void* arg) {
         (*static_cast<bool*>(arg)) = true;});
+  rocksdb::SyncPoint::GetInstance()->SetCallBack(
+      "CompactionJob::Install:PostInstallResults",
+      [&](void* arg) {
+        encountered_install++;
+        Status *status = static_cast<Status *>(arg);
+        ASSERT_OK(*status);});
 
   rocksdb::SyncPoint::GetInstance()->EnableProcessing();
 
@@ -96,6 +106,7 @@ TEST_F(CompactionCorruptionTest, CancellingCompactionsWorks) {
   rocksdb::SyncPoint::GetInstance()->DisableProcessing();
   if (injected_corruptions >= 1) { // might not be the case because probabilistic
     assert(num_corruptions >= 1);
+    assert(encountered_install >= 1);
   }
 }
 } // namespace rocksdb
