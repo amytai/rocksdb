@@ -403,6 +403,9 @@ class EventListener {
                                  BackgroundErrorInfo* /*key-ranges to recover*/,
                                  Status * /*to update compaction status to OK*/) {}
 
+  // Used to notify the CV that starts to wait at the end of OnSpecialBackgroundError
+  virtual void NotifyCV() {}
+
   // A call-back function for RocksDB which will be called whenever a change
   // of superversion triggers a change of the stall conditions.
   //
