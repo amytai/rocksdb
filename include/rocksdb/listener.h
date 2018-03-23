@@ -400,8 +400,7 @@ class EventListener {
 
   virtual void OnSpecialBackgroundError(BackgroundErrorReason /* reason */,
                                  Status* /* bg_error */,
-                                 BackgroundErrorInfo* /*key-ranges to recover*/,
-                                 Status * /*to update compaction status to OK*/) {}
+                                 BackgroundErrorInfo* /*key-ranges to recover*/) {}
 
   // Used to notify the CV that starts to wait at the end of OnSpecialBackgroundError
   virtual void NotifyCV() {}

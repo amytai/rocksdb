@@ -27,7 +27,7 @@ class BackgroundErrorListener : public EventListener {
        ~BackgroundErrorListener() override{};
 
        void OnSpecialBackgroundError(BackgroundErrorReason reason, Status* bg_error,
-           BackgroundErrorInfo *info, Status *status) override {
+           BackgroundErrorInfo *info) override {
          assert(info->beginKeys.size() >= 1);
          assert(info->endKeys.size() >= 1);
          assert(info->beginKeys.size() == info->endKeys.size());
@@ -39,9 +39,6 @@ class BackgroundErrorListener : public EventListener {
          }
          assert(info->beginKeys[0] == DBTestBase::Key(0) || info->beginKeys[0] == DBTestBase::Key(5));
          assert(info->endKeys[0] == Slice("l", 1) || info->endKeys[0] == DBTestBase::Key(5));
-         if (status != nullptr) {
-          *status = Status::OK();
-         }
        }
 };
 

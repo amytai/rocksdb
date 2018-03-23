@@ -1716,13 +1716,13 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
     compaction_job.Prepare();
 
     mutex_.Unlock();
-    status = compaction_job.Run();
+    compaction_job.Run();
     TEST_SYNC_POINT("DBImpl::BackgroundCompaction:NonTrivial:AfterRun");
     mutex_.Lock();
 
     // Now check to see if there are any corruptions we need to deal
     // with synchronously
-    if (status.IsCorruption()) {
+    if (compaction_job.IsCorruptedStatus()) {
       ROCKS_LOG_WARN(immutable_db_options_.info_log, "Compaction error: %s",
           status.ToString().c_str());
       if (immutable_db_options_.paranoid_checks && bg_error_.ok()) {
@@ -1734,7 +1734,7 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
           beInfo.endKeys = c->EndKeys();
           EventHelpers::NotifyOnBackgroundError(immutable_db_options_.listeners,
               BackgroundErrorReason::kCompaction,
-              &new_bg_error, &mutex_, &beInfo, compaction_job.GetStatusPointer());
+              &new_bg_error, &mutex_, &beInfo);
         }
       }
     }

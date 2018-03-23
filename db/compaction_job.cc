@@ -212,6 +212,7 @@ struct CompactionJob::CompactionState {
   // key-range
   std::vector<CompactionJob::SubcompactionState> sub_compact_states;
   Status status;
+  Status corrupted_status;
 
   uint64_t total_bytes;
   uint64_t num_input_records;
@@ -526,7 +527,7 @@ void CompactionJob::GenSubcompactionBoundaries() {
   }
 }
 
-Status CompactionJob::Run() {
+void CompactionJob::Run() {
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_RUN);
   TEST_SYNC_POINT("CompactionJob::Run():Start");
@@ -564,12 +565,13 @@ Status CompactionJob::Run() {
   // Check if any thread encountered an error during execution
   Status status;
   for (const auto& state : compact_->sub_compact_states) {
-    if (!state.status.ok() && status.ok()) {
+    if (!state.status.ok() && status.ok() && !state.status.IsCorruption()) {
       status = state.status;
     }
     // If status is corrupted, make sure we preserve the corrupted range
     // in the overarching Compaction object
     if (state.status.IsCorruption()) {
+      compact_->corrupted_status = state.status;
       int i = 0;
       for (Slice s : state.beginKeys) {
         // Ugh, this is necessary because compact_ gets deleted, which
@@ -607,11 +609,10 @@ Status CompactionJob::Run() {
   TEST_SYNC_POINT("CompactionJob::Run():End");
 
   compact_->status = status;
-  return status;
 }
 
-Status *CompactionJob::GetStatusPointer() {
-  return &compact_->status;
+bool CompactionJob::IsCorruptedStatus() {
+  return compact_->corrupted_status.IsCorruption();
 }
 
 Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
