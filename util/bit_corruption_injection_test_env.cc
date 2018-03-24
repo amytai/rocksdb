@@ -90,7 +90,7 @@ namespace rocksdb {
         TEST_SYNC_POINT_CALLBACK(
             "CorruptedRandomAccessFile::Read():CheckIfCompactionTest", &isTest);
         if (isTest) {
-          if (n < 100 || n == 814) {
+          if (n < 100 || n > 800) {
             //Try to avoid metadata blocks..
             for (size_t i = 0; i < tempResult.size(); ++i) {
               scratch[i] = tempScratch[i];

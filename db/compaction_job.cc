@@ -74,6 +74,7 @@ struct CompactionJob::SubcompactionState {
 
   // The return status of this subcompaction
   Status status;
+  Status corrupted_status;
 
   // Used for storing corruption errors encountered during ProcessKeyValueCompaction
   // so that we can pass them up to Background Listeners
@@ -565,13 +566,13 @@ void CompactionJob::Run() {
   // Check if any thread encountered an error during execution
   Status status;
   for (const auto& state : compact_->sub_compact_states) {
-    if (!state.status.ok() && status.ok() && !state.status.IsCorruption()) {
+    if (!state.status.ok() && status.ok()) {
       status = state.status;
     }
     // If status is corrupted, make sure we preserve the corrupted range
     // in the overarching Compaction object
-    if (state.status.IsCorruption()) {
-      compact_->corrupted_status = state.status;
+    if (state.corrupted_status.IsCorruption()) {
+      compact_->corrupted_status = state.corrupted_status;
       int i = 0;
       for (Slice s : state.beginKeys) {
         // Ugh, this is necessary because compact_ gets deleted, which
@@ -1034,7 +1035,8 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   }
 
   // Before we reset input, we want to get error information out
-  if (status.IsCorruption()) {
+  if (input->CorruptedStatus().IsCorruption()) {
+    sub_compact->corrupted_status = input->CorruptedStatus();
     TEST_SYNC_POINT("CompactionJob::run()::EncounteredCorruption");
     // Go through all the iters in this merging iterator and determine which one had the
     // corruption

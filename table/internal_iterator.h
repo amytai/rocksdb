@@ -101,6 +101,7 @@ class InternalIterator : public Cleanable {
   // About to break a million abstractions:
   // Only for MergingIterator
   virtual std::vector<InternalIterator *> CorruptedChildren(std::vector<int> &indices) {return {};}
+  virtual Status CorruptedStatus() {return Status::OK();}
   // Only for TwoLevelIterator, so we can walk through the iterator and find
   // the lowest level BlockIter
   virtual InternalIterator *FirstLevelIter() {return nullptr;}

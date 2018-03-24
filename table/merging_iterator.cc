@@ -260,11 +260,24 @@ class MergingIterator : public InternalIterator {
     Status s;
     for (auto& child : children_) {
       s = child.status();
-      if (!s.ok()) {
+      if (!s.ok() && !s.IsCorruption()) {
         break;
+      } else {
+        s = Status::OK();
       }
     }
     return s;
+  }
+
+  virtual Status CorruptedStatus() override {
+    Status s;
+    for (auto& child : children_) {
+      s = child.status();
+      if (s.IsCorruption()) {
+        return s;
+      }
+    }
+    return Status::OK();
   }
 
   virtual void SetPinnedItersMgr(
