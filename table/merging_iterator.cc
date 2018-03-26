@@ -45,7 +45,8 @@ class MergingIterator : public InternalIterator {
         direction_(kForward),
         minHeap_(comparator_),
         prefix_seek_mode_(prefix_seek_mode),
-        pinned_iters_mgr_(nullptr) {
+        pinned_iters_mgr_(nullptr),
+        ignore_corruption_(false) {
     children_.resize(n);
     for (int i = 0; i < n; i++) {
       children_[i].Set(children[i]);
@@ -260,10 +261,18 @@ class MergingIterator : public InternalIterator {
     Status s;
     for (auto& child : children_) {
       s = child.status();
-      if (!s.ok() && !s.IsCorruption()) {
-        break;
+      if (ignore_corruption_) {
+        if (!s.ok() && !s.IsCorruption()) {
+          break;
+        } else {
+          s = Status::OK();
+        }
       } else {
-        s = Status::OK();
+        if (!s.ok()) {
+          break;
+        } else {
+          s = Status::OK();
+        }
       }
     }
     return s;
@@ -278,6 +287,10 @@ class MergingIterator : public InternalIterator {
       }
     }
     return Status::OK();
+  }
+
+  virtual void SetIgnoreCorruption(bool ignoreCorruption) override {
+    ignore_corruption_ = ignoreCorruption;
   }
 
   virtual void SetPinnedItersMgr(
@@ -342,6 +355,8 @@ class MergingIterator : public InternalIterator {
   // forward.  Lazily initialize it to save memory.
   std::unique_ptr<MergerMaxIterHeap> maxHeap_;
   PinnedIteratorsManager* pinned_iters_mgr_;
+
+  bool ignore_corruption_;
 
   void SwitchToForward();
 
