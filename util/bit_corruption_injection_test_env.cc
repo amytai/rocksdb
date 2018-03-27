@@ -38,7 +38,7 @@ namespace rocksdb {
           return s;
         }
         // Use the uber to flip bits
-        Random r((uint32_t)Env::Default()->NowMicros());
+        Random64 r((uint32_t)Env::Default()->NowMicros());
         for (size_t i = 0; i < tempResult.size(); ++i) {
           bool flipThis = r.OneIn(UBER_);
           if (flipThis) {
@@ -100,7 +100,7 @@ namespace rocksdb {
           }
         }
         // Use the uber to flip bits
-        Random r((uint32_t)Env::Default()->NowMicros());
+        Random64 r((uint32_t)Env::Default()->NowMicros());
         bool modified = false;
         for (size_t i = 0; i < tempResult.size(); ++i) {
           bool flipThis = r.OneIn(UBER_);
