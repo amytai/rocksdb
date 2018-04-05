@@ -616,6 +616,10 @@ bool CompactionJob::IsCorruptedStatus() {
   return compact_->corrupted_status.IsCorruption();
 }
 
+Status CompactionJob::CorruptedStatus() {
+  return compact_->corrupted_status;
+}
+
 Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_INSTALL);

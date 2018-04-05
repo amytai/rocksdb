@@ -87,7 +87,8 @@ class CompactionJob {
   // REQUIRED: mutex held
   Status Install(const MutableCFOptions& mutable_cf_options);
 
-  bool IsCorruptedStatus(); // Returns true if compact_.corruption_status.IsCorrupted();
+  bool IsCorruptedStatus(); // Returns true if compact_.corrupted_status.IsCorrupted();
+  Status CorruptedStatus(); // Returns compact_.corrupted_status;
 
  private:
   struct SubcompactionState;
