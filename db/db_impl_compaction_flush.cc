@@ -1736,6 +1736,9 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
               BackgroundErrorReason::kCompaction,
               &new_bg_error, &mutex_, &beInfo);
         }
+        if (!new_bg_error.ok()) {
+          bg_error_ = new_bg_error;
+        }
       }
     }
 
