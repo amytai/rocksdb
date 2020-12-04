@@ -80,6 +80,9 @@ struct EnvOptions {
   // If true, then use O_DIRECT for writing data
   bool use_direct_writes = false;
 
+  // If true, use urgent flag for pread/pwrite calls
+  bool disable_urgent = false;
+
   // If false, fallocate() calls are bypassed
   bool allow_fallocate = true;
 

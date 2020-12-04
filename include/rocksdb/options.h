@@ -675,6 +675,8 @@ struct DBOptions {
   // Default: false
   // Not supported in ROCKSDB_LITE mode!
   bool use_direct_io_for_flush_and_compaction = false;
+  
+  bool disable_urgent = false;
 
   // If false, fallocate() calls are bypassed
   bool allow_fallocate = true;

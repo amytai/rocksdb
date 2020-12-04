@@ -50,6 +50,7 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       use_direct_reads(options.use_direct_reads),
       use_direct_io_for_flush_and_compaction(
           options.use_direct_io_for_flush_and_compaction),
+      disable_urgent(options.disable_urgent),
       allow_fallocate(options.allow_fallocate),
       is_fd_close_on_exec(options.is_fd_close_on_exec),
       advise_random_on_open(options.advise_random_on_open),

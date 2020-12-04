@@ -34,6 +34,9 @@
 #include "util/coding.h"
 #include "util/string_util.h"
 
+#include <sys/uio.h>
+#define RWF_URGENT  0x00000020
+
 #if defined(OS_LINUX) && !defined(F_SET_RW_HINT)
 #define F_LINUX_SPECIFIC_BASE 1024
 #define F_SET_RW_HINT (F_LINUX_SPECIFIC_BASE + 12)
@@ -62,7 +65,7 @@ namespace {
 // cutting the buffer in 1GB chunks. We use this chunk size to be sure to keep
 // the writes aligned.
 
-bool PosixWrite(int fd, const char* buf, size_t nbyte) {
+bool PosixWrite(int fd, const char* buf, size_t nbyte, bool disable_urgent) {
   const size_t kLimit1Gb = 1UL << 30;
 
   const char* src = buf;
@@ -71,7 +74,14 @@ bool PosixWrite(int fd, const char* buf, size_t nbyte) {
   while (left != 0) {
     size_t bytes_to_write = std::min(left, kLimit1Gb);
 
-    ssize_t done = write(fd, src, bytes_to_write);
+    ssize_t done;
+    if (disable_urgent) {
+        done = write(fd, src, bytes_to_write);
+    }
+    else {
+        struct iovec iov = {.iov_base = const_cast<char *>(src), .iov_len = bytes_to_write};
+        done = pwritev2(fd, &iov, 1, -1, RWF_URGENT);
+    }
     if (done < 0) {
       if (errno == EINTR) {
         continue;
@@ -411,6 +421,7 @@ PosixRandomAccessFile::PosixRandomAccessFile(const std::string& fname, int fd,
     : filename_(fname),
       fd_(fd),
       use_direct_io_(options.use_direct_reads),
+      disable_urgent_(options.disable_urgent),
       logical_sector_size_(GetLogicalBufferSize(fd_)) {
   assert(!options.use_direct_reads || !options.use_mmap_reads);
   assert(!options.use_mmap_reads || sizeof(void*) < 8);
@@ -430,7 +441,14 @@ Status PosixRandomAccessFile::Read(uint64_t offset, size_t n, Slice* result,
   size_t left = n;
   char* ptr = scratch;
   while (left > 0) {
-    r = pread(fd_, ptr, left, static_cast<off_t>(offset));
+    if (disable_urgent_) {
+        r = pread(fd_, ptr, left, static_cast<off_t>(offset));
+    }
+    else {
+        struct iovec iov = {.iov_base = ptr, .iov_len = left};
+        r = preadv2(fd_, &iov, 1, static_cast<off_t>(offset), RWF_URGENT);
+    }
+        
     if (r <= 0) {
       if (r == -1 && errno == EINTR) {
         continue;
@@ -832,6 +850,7 @@ PosixWritableFile::PosixWritableFile(const std::string& fname, int fd,
     : WritableFile(options),
       filename_(fname),
       use_direct_io_(options.use_direct_writes),
+      disable_urgent_(options.disable_urgent),
       fd_(fd),
       filesize_(0),
       logical_sector_size_(GetLogicalBufferSize(fd_)) {
@@ -858,8 +877,8 @@ Status PosixWritableFile::Append(const Slice& data) {
   }
   const char* src = data.data();
   size_t nbytes = data.size();
-
-  if (!PosixWrite(fd_, src, nbytes)) {
+    
+  if (!PosixWrite(fd_, src, nbytes, disable_urgent_)) {
     return IOError("While appending to file", filename_, errno);
   }
 

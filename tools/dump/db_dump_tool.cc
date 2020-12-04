@@ -32,6 +32,7 @@ bool DbDumpTool::Run(const DumpOptions& dump_options,
 
   // Open the database
   options.create_if_missing = false;
+  options.disable_urgent = true;
   status = rocksdb::DB::OpenForReadOnly(options, dump_options.db_path, &dbptr);
   if (!status.ok()) {
     std::cerr << "Unable to open database '" << dump_options.db_path
@@ -41,8 +42,11 @@ bool DbDumpTool::Run(const DumpOptions& dump_options,
 
   const std::unique_ptr<rocksdb::DB> db(dbptr);
 
+  EnvOptions env_options = rocksdb::EnvOptions();
+  env_options.disable_urgent = true;
+
   status = env->NewWritableFile(dump_options.dump_location, &dumpfile,
-                                rocksdb::EnvOptions());
+                                env_options);
   if (!status.ok()) {
     std::cerr << "Unable to open dump file '" << dump_options.dump_location
               << "' for writing: " << status.ToString() << std::endl;

@@ -84,6 +84,7 @@ class PosixRandomAccessFile : public RandomAccessFile {
   std::string filename_;
   int fd_;
   bool use_direct_io_;
+  bool disable_urgent_;
   size_t logical_sector_size_;
 
  public:
@@ -111,6 +112,7 @@ class PosixWritableFile : public WritableFile {
  protected:
   const std::string filename_;
   const bool use_direct_io_;
+  const bool disable_urgent_;
   int fd_;
   uint64_t filesize_;
   size_t logical_sector_size_;
